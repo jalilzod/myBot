@@ -1,0 +1,12 @@
+# environments
+.env
+.env.*
+.venv/
+venv/
+
+# python junk
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
