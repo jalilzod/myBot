@@ -11,26 +11,29 @@ from supabase import create_client
 
 load_dotenv()
 
-# Env
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # required
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing in .env")
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    raise RuntimeError("SUPABASE_URL or SUPABASE_ANON_KEY missing in .env")
+if not SUPABASE_URL:
+    raise RuntimeError("SUPABASE_URL is missing in .env")
 if not SUPABASE_SERVICE_ROLE_KEY:
-    print("⚠️ Warning: SUPABASE_SERVICE_ROLE_KEY missing — admin writes may fail if RLS is enabled.")
+    raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is missing in .env (needed for all DB access)")
 
 # Admin IDs (comma-separated numeric IDs in .env)
-ADMIN_IDS = set(int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit())
+ADMIN_IDS = set(
+    int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip().isdigit()
+)
 
-# Clients
+# Telegram bot
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)
+
+# Single Supabase client with service role key for ALL operations
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+supabase_admin = supabase  # alias for clarity if needed
 
 # ===== i18n (translations) =====
 LANG = {
@@ -45,6 +48,12 @@ LANG = {
         "btn_contact": "📞 Контакты",
         "btn_lang": "🌐 Язык",
         "btn_admin": "🛠 Админ",
+        "btn_back": "⬅️ Назад",
+        "btn_by_code": "🔢 По трек-коду",
+        "btn_by_phone": "📞 По телефону",
+        "btn_calc_again": "🔁 Новый расчёт",
+        "btn_menu_back": "⬅️ В меню",
+
         "lang_pick": "Выберите язык:",
         "lang_saved": "Язык сохранён: {lang_name}",
         "channels_title": "Наши каналы:",
@@ -53,11 +62,13 @@ LANG = {
         "track_enter_phone": "Введите *номер телефона* (например, +992XXXXXXXXX):",
         "search_none": "Ничего не найдено. Проверьте данные и попробуйте снова.",
         "search_again": "Ещё поиск? Выберите способ:",
+
+        # Office address + about
         "about_text": (
             "🌏 **О нас — Yasroikard Logistic**\n\n"
             "🏢 **Адрес офиса:**\n"
             "Китай, провинция Чжэцзян, город Иу,\n"
-            "улица ЦзянДун, район УАй Синь Цунь,\n"
+            "улица Цзяндун, район Уай Синь Цунь,\n"
             "д. 44 / блок 1, офис B301\n\n"
             "👤 **Админы:** Yasroikard и Джалилов Киёмиддин\n\n"
             "💼 **Кто мы:** Профессиональные байеры в Китае. Поможем найти товар, проверить качество и сопровождать вас как переводчики — быстро, безопасно и эффективно.\n\n"
@@ -74,12 +85,71 @@ LANG = {
             "✨ Выбирайте нас и начните путь к предпринимательству!"
         ),
         "delivery_text": (
-            "🚚 **Сроки доставки**\n\n"
-            "📍 **Таджикистан:** 18–26 дней\n"
-            "📍 **Россия:** 13–18 дней\n"
-            "📍 **Европа и США:** уточняйте у администратора\n\n"
-            "💬 Для других стран свяжитесь с админом: @mg19981 или @Yasin_direct"
+            "🚚 *Сроки доставки*\n\n"
+            "📍 *Таджикистан:* 18–26 дней\n"
+            "📍 *Россия:* 13–18 дней\n"
+            "📍 *Европа и США:* уточняйте у администратора\n\n"
+            "🏢 *Наш адрес:*\n"
+            "Китай, провинция Чжэцзян, г\\. Иу,\n"
+            "ул ЦзянДун, р-н УАй Синь Цунь,\n"
+            "д 44  блок 1, офис B301\n\n"
+            "💬 Для других стран свяжитесь с админом: @mg19981 или @Yasin\\_direct"
         ),
+
+        "contact_text": (
+            "📞 **Контакты**\n\n"
+            "Админы: @mg19981 • @Yasin\\_direct\n\n"
+            "🏢 **Адрес офиса:**\n"
+            "Китай, провинция Чжэцзян, город Иу,\n"
+            "улица Цзяндун, район Уай Синь Цунь,\n"
+            "д 44  блок 1, офис B301"
+        ),
+
+                # inside LANG["ru"]
+        "btn_warehouse": "🏭 Адреса складов",
+
+        "warehouse_title_multi": "🏭 Адреса складов",
+        "warehouse_tj_label": "Таджикистан",
+        "warehouse_ru_label": "Россия",
+
+        "warehouse_tj_address": (
+            "收货人：YASCARGO\n"
+            "电话：13661799136\n"
+            "详细地址：浙江省 金华市 义乌市福田物流园A8-165号 (номери телефони хдтон)"
+        ),
+        "warehouse_ru_address": (
+            "收货人：M9613-чор раками охири номер\n"
+            "电话：15734838888\n"
+            "详细地址：浙江省金华市义乌市 福田工业区涌金大道B9号院内9399库房M9613-чор раками охири номер"
+        ),
+
+        # one message, two code blocks for easy copy
+        "warehouse_text_multi": (
+            "*{title}*\n\n"
+            "📦 *{tj_label}*\n"
+            "```\n{tj_addr}\n```\n"
+            "📦 *{ru_label}*\n"
+            "```\n{ru_addr}\n```\n"
+            "📌 Скопируйте нужный адрес."
+        ),
+
+
+
+        # Calculator i18n
+        "calc_intro": "📦 Расчёт объёма (м³).\nСначала выберите единицы измерения:",
+        "calc_enter_h_m": "Введите *высоту* в метрах (например, 1.2):",
+        "calc_enter_h_cm": "Введите *высоту* в сантиметрах (например, 120):",
+        "calc_enter_w_unit": "Ок. Теперь введите *ширину* в {unit_phrase}:",
+        "calc_enter_l_unit": "Отлично. Теперь введите *длину* в {unit_phrase}:",
+        "calc_invalid_value_unit": "Неверное значение. Введите {dimension} в {unit}.",
+        "calc_result": "📦 Объём: *{volume:.3f} м³*",
+        "unit_phrase_m": "метрах",
+        "unit_phrase_cm": "сантиметрах",
+        "unit_m": "м",
+        "unit_cm": "см",
+        "dim_height": "высоту",
+        "dim_width": "ширину",
+        "dim_length": "длину",
     },
     "en": {
         "welcome": "Welcome to Yasroikard Logistic!",
@@ -92,6 +162,12 @@ LANG = {
         "btn_contact": "📞 Contacts",
         "btn_lang": "🌐 Language",
         "btn_admin": "🛠 Admin",
+        "btn_back": "⬅️ Back",
+        "btn_by_code": "🔢 By tracking code",
+        "btn_by_phone": "📞 By phone",
+        "btn_calc_again": "🔁 New calculation",
+        "btn_menu_back": "⬅️ Main menu",
+
         "lang_pick": "Choose your language:",
         "lang_saved": "Language saved: {lang_name}",
         "channels_title": "Our channels:",
@@ -100,8 +176,89 @@ LANG = {
         "track_enter_phone": "Enter *phone number* (e.g., +1XXXXXXXXXX):",
         "search_none": "No results. Please check and try again.",
         "search_again": "Search again? Choose a method:",
-        "about_text": "ℹ️ About us text (to be translated).",
-        "delivery_text": "🚚 Delivery time info (to be translated).",
+
+        "about_text": (
+            "🌏 **About Yasroikard Logistic**\n\n"
+            "🏢 **Office address:**\n"
+            "Yiwu City, Jiangdong Street, Wài Xīn Cūn area,\n"
+            "Building 44 / Block 1, Office B301, Zhejiang, China\n\n"
+            "👤 **Admins:** Yasroikard and Jalilov Kiyomidin\n\n"
+            "💼 **Who we are:** Professional buyers in China. We help you find products, inspect quality, and act as interpreters — fast, safe, and efficient.\n\n"
+            "🛒 **What we offer:**\n"
+            "• Purchasing for Wildberries, Ozon and more (online/offline)\n"
+            "• Commission only 5%\n"
+            "• Deal control from sourcing to delivery\n\n"
+            "🚢 **Delivery:**\n"
+            "• Tajikistan: 18–26 days\n"
+            "• Russia: 13–18 days\n"
+            "• Europe & USA: ask the admin\n\n"
+            "💰 **Rates:** from $0.5/kg and from $190/m³\n\n"
+            "🌍 Clients worldwide: Asia, Europe, USA, Arab countries, Africa.\n\n"
+            "✨ Choose us and start your business journey!"
+        ),
+
+        # Warehouse (EN)
+        "btn_warehouse": "🏭 Warehouse addresses",
+
+        "warehouse_title_multi": "🏭 Warehouse addresses",
+        "warehouse_tj_label": "Tajikistan",
+        "warehouse_ru_label": "Russia",
+
+        "warehouse_tj_address": (
+            "收货人：YASCARGO\n"
+            "电话：13661799136\n"
+            "详细地址：浙江省 金华市 义乌市福田物流园A8-165号 (номери телефони хдтон)"
+        ),
+        "warehouse_ru_address": (
+            "收货人：M9613-чор раками охири номер\n"
+            "电话：15734838888\n"
+            "详细地址：浙江省金华市义乌市 福田工业区涌金大道B9号院内9399库房M9613-чор раками охири номер"
+        ),
+
+        "warehouse_text_multi": (
+            "*{title}*\n\n"
+            "📦 *{tj_label}*\n"
+            "```\n{tj_addr}\n```\n"
+            "📦 *{ru_label}*\n"
+            "```\n{ru_addr}\n```\n"
+            "📌 Copy the address you need."
+        ),
+
+
+        "delivery_text": (
+            "🚚 *Delivery times*\n\n"
+            "📍 *Tajikistan:* 18–26 days\n"
+            "📍 *Russia:* 13–18 days\n"
+            "📍 *Europe & USA:* check with admin\n\n"
+            "🏢 *Our address:*\n"
+            "China, Zhejiang Province, Yiwu City,\n"
+            "JiangDong Street, WuAi XinCun District,\n"
+            "No 44  Block 1, Office B301\n\n"
+            "💬 For other countries contact admin: @mg19981 or @Yasin\\_direct"
+        ),
+
+        "contact_text": (
+            "📞 **Contacts**\n\n"
+            "Admins: @mg19981 • @Yasin\\_direct\n\n"
+            "🏢 **Office address:**\n"
+            "Yiwu City, Jiangdong Street, Wài Xīn Cūn area,\n"
+            "Building 44  Block 1, Office B301, Zhejiang, China"
+        ),
+
+        "calc_intro": "📦 Volume calculator (m³).\nFirst, choose the units:",
+        "calc_enter_h_m": "Enter *height* in meters (e.g., 1.2):",
+        "calc_enter_h_cm": "Enter *height* in centimeters (e.g., 120):",
+        "calc_enter_w_unit": "Great. Now enter *width* in {unit_phrase}:",
+        "calc_enter_l_unit": "Perfect. Finally enter *length* in {unit_phrase}:",
+        "calc_invalid_value_unit": "Invalid value. Please enter {dimension} in {unit}.",
+        "calc_result": "📦 Volume: *{volume:.3f} m³*",
+        "unit_phrase_m": "meters",
+        "unit_phrase_cm": "centimeters",
+        "unit_m": "m",
+        "unit_cm": "cm",
+        "dim_height": "height",
+        "dim_width": "width",
+        "dim_length": "length",
     },
     "tj": {
         "welcome": "Хуш омадед ба Yasroikard Logistic!",
@@ -114,6 +271,12 @@ LANG = {
         "btn_contact": "📞 Тамос",
         "btn_lang": "🌐 Забон",
         "btn_admin": "🛠 Админ",
+        "btn_back": "⬅️ Бозгашт",
+        "btn_by_code": "🔢 Аз рӯи код",
+        "btn_by_phone": "📞 Аз рӯи телефон",
+        "btn_calc_again": "🔁 Ҳисоби нав",
+        "btn_menu_back": "⬅️ Ба меню",
+
         "lang_pick": "Забонро интихоб кунед:",
         "lang_saved": "Забон нигоҳ дошта шуд: {lang_name}",
         "channels_title": "Каналҳои мо:",
@@ -122,8 +285,90 @@ LANG = {
         "track_enter_phone": "Рақами *телефон*-ро ворид кунед:",
         "search_none": "Ёфт нашуд. Санҷед ва боз кӯшиш кунед.",
         "search_again": "Боз ҷустуҷӯ мекунед? Усулро интихоб кунед:",
-        "about_text": "ℹ️ Дар бораи мо (ба зудӣ тарҷума мешавад).",
-        "delivery_text": "🚚 Мӯҳлати расонӣ (ба зудӣ тарҷума мешавад).",
+
+        "about_text": (
+            "🌏 **Дар бораи Yasroikard Logistic**\n\n"
+            "🏢 **Суроғаи офис:**\n"
+            "Шаҳри Йиву, кӯч. Ҷяндун, маҳ. Вай Син Чун,\n"
+            "Бинои 44 / Қисми 1, утоқ B301, Вил. Ҷेजян, Чин\n\n"
+            "👤 **Админҳо:** Yasroikard ва Ҷалилов Қиёмиддин\n\n"
+            "💼 **Мо кистем:** Харидорони касбӣ дар Чин. Дар пайдо кардани мол, санҷиши сифат ва тарҷумонӣ ба шумо кӯмак мерасонем — зуд, бехатар ва муассир.\n\n"
+            "🛒 **Хизматҳо:**\n"
+            "• Харид барои Wildberries, Ozon ва ғ.\n"
+            "• Комиссия танҳо 5%\n"
+            "• Назорати муомила аз ҷустуҷӯ то расонидан\n\n"
+            "🚢 **Расонидан:**\n"
+            "• Тоҷикистон: 18–26 рӯз\n"
+            "• Русия: 13–18 рӯз\n"
+            "• Аврупо ва ИМА: бо админ равшан кунед\n\n"
+            "💰 **Тарифҳо:** аз $0.5/кг ва аз $190/м³\n\n"
+            "🌍 Мизоҷон аз тамоми ҷаҳон.\n\n"
+            "✨ Бо мо оғоз кунед!"
+        ),
+
+
+        # Warehouse (TJ)
+        "btn_warehouse": "🏭 Нишонии анборҳо",
+
+        "warehouse_title_multi": "🏭 Нишонии анборҳо",
+        "warehouse_tj_label": "Тоҷикистон",
+        "warehouse_ru_label": "Русия",
+
+        "warehouse_tj_address": (
+            "收货人：YASCARGO\n"
+            "电话：13661799136\n"
+            "详细地址：浙江省 金华市 义乌市福田物流园A8-165号 (номери телефони хдтон)"
+        ),
+        "warehouse_ru_address": (
+            "收货人：M9613-чор раками охири номер\n"
+            "电话：15734838888\n"
+            "详细地址：浙江省金华市义乌市 福田工业区涌金大道B9号院内9399库房M9613-чор раками охири номер"
+        ),
+
+        "warehouse_text_multi": (
+            "*{title}*\n\n"
+            "📦 *{tj_label}*\n"
+            "```\n{tj_addr}\n```\n"
+            "📦 *{ru_label}*\n"
+            "```\n{ru_addr}\n```\n"
+            "📌 Нишониро аз боло нусха кунед."
+        ),
+
+
+        "delivery_text": (
+            "🚚 *Мӯҳлати расонӣ*\n\n"
+            "📍 *Тоҷикистон:* 18–26 рӯз\n"
+            "📍 *Русия:* 13–18 рӯз\n"
+            "📍 *Аврупо ва ИМА:* бо админ санҷед\n\n"
+            "🏢 *Суроғаи мо:*\n"
+            "Чин, вилояти Чжэцзян, шаҳри Иу,\n"
+            "кӯчаи ЦзянДун, ноҳияи УАй Синь Цунь,\n"
+            "хона 44  блок 1, утоқи B301\n\n"
+            "💬 Барои дигар кишварҳо бо админ тамос гиред: @mg19981 ё @Yasin\\_direct"
+        ),
+
+        "contact_text": (
+            "📞 **Тамос**\n\n"
+            "Админҳо: @mg19981 • @Yasin\\_direct\n\n"
+            "🏢 **Суроғаи офис:**\n"
+            "Шаҳри Йиву, кӯч. Ҷяндун, маҳ. Вай Син Чун,\n"
+            "Бинои 44  Қисми 1, утоқ B301, Вил. Ҷежян, Чин"
+        ),
+
+        "calc_intro": "📦 Ҳисоби ҳаҷм (м³).\nАввал воҳидҳоро интихоб кунед:",
+        "calc_enter_h_m": "Баландиро *дар метр* ворид кунед (масалан, 1.2):",
+        "calc_enter_h_cm": "Баландиро *дар сантиметр* ворид кунед (масалан, 120):",
+        "calc_enter_w_unit": "Хуб. Акнун *бар*-ро дар {unit_phrase} ворид кунед:",
+        "calc_enter_l_unit": "Аъло. Ниҳоят *дарозӣ*-ро дар {unit_phrase} ворид кунед:",
+        "calc_invalid_value_unit": "Қимати нодуруст. {dimension}-ро дар {unit} ворид кунед.",
+        "calc_result": "📦 Ҳаҷм: *{volume:.3f} м³*",
+        "unit_phrase_m": "метрҳо",
+        "unit_phrase_cm": "сантиметрҳо",
+        "unit_m": "м",
+        "unit_cm": "см",
+        "dim_height": "баландӣ",
+        "dim_width": "бар",
+        "dim_length": "дарозӣ",
     },
 }
 LANG_NAMES = {"ru": "Русский", "en": "English", "tj": "Тоҷикӣ"}
@@ -138,6 +383,9 @@ def get_lang(user_id: int) -> str:
         lang = (r.data or [{}])[0].get("language") or "ru"
     except Exception:
         lang = "ru"
+    # Safety: normalize bad legacy values
+    if lang not in LANG:
+        lang = "ru"
     USER_LANG_CACHE[user_id] = lang
     return lang
 
@@ -150,7 +398,8 @@ def set_lang(user_id: int, lang: str):
 
 def t(user_id: int, key: str, **kwargs) -> str:
     lang = get_lang(user_id)
-    txt = LANG.get(lang, LANG["ru"]).get(key, LANG["ru"].get(key, key))
+    base = LANG.get(lang, LANG["ru"])
+    txt = base.get(key, LANG["ru"].get(key, key))
     if kwargs:
         txt = txt.format(**kwargs)
     return txt
@@ -176,7 +425,6 @@ BEN_DATA: dict[int, dict] = {}          # temp: {"whatsapp": str, "ordered": boo
 BEN_PAGE_SIZE = 10
 ADMIN_BEN_PAGE: dict[int, int] = {}  # admin_user_id -> current page (1-based)
 
-
 STATUS_OPTIONS = {"in_transit": "В пути", "arrived": "Прибыло", "warehouse": "На складе"}
 PHONE_RE = re.compile(r"^\+?\d{7,15}$")
 def normalize_phone(p: str) -> str:
@@ -189,7 +437,12 @@ def is_phone(text: str) -> bool:
     return t_.startswith("+") or t_.isdigit()
 
 
-# kewboard 
+
+
+
+
+############################################################################
+############################################################################
 
 # === Part 2: keyboards + calculator helpers ===
 def main_menu_kb(lang_code: str) -> InlineKeyboardMarkup:
@@ -208,17 +461,22 @@ def main_menu_kb(lang_code: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=L["btn_contact"], callback_data="menu:contact"),
         ],
         [
+            InlineKeyboardButton(text=L["btn_warehouse"], callback_data="menu:warehouse"),
+        ],
+
+        [
             InlineKeyboardButton(text=L["btn_lang"], callback_data="menu:lang"),
             InlineKeyboardButton(text=L["btn_admin"], callback_data="menu:admin"),
         ],
     ])
 
-def channels_kb() -> InlineKeyboardMarkup:
+def channels_kb(lang_code: str) -> InlineKeyboardMarkup:
+    L = LANG.get(lang_code, LANG["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👗 Одежда", url="https://t.me/yasroikard_gr")],
         [InlineKeyboardButton(text="📱 Электроника", url="https://t.me/yasroikard_elektronika")],
-        [InlineKeyboardButton(text="🕰 Часы и аксессуары", url="https://t.me/russiamanwatchs")],  # NEW
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:back")]
+        [InlineKeyboardButton(text="🕰 Часы и аксессуары", url="https://t.me/russiamanwatchs")],
+        [InlineKeyboardButton(text=L["btn_back"], callback_data="menu:back")]
     ])
 
 def admin_menu_kb() -> InlineKeyboardMarkup:
@@ -233,13 +491,14 @@ def admin_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:back")],
     ])
 
-def track_choice_kb() -> InlineKeyboardMarkup:
+def track_choice_kb(lang_code: str) -> InlineKeyboardMarkup:
+    L = LANG.get(lang_code, LANG["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🔢 По трек-коду", callback_data="track:by_code"),
-            InlineKeyboardButton(text="📞 По телефону", callback_data="track:by_phone"),
+            InlineKeyboardButton(text=L["btn_by_code"], callback_data="track:by_code"),
+            InlineKeyboardButton(text=L["btn_by_phone"], callback_data="track:by_phone"),
         ],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:back")]
+        [InlineKeyboardButton(text=L["btn_back"], callback_data="menu:back")]
     ])
 
 def ben_list_nav_kb(page: int, total_pages: int) -> InlineKeyboardMarkup:
@@ -254,7 +513,6 @@ def ben_list_nav_kb(page: int, total_pages: int) -> InlineKeyboardMarkup:
         row,
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:admin")],
     ])
-
 
 def status_choice_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -305,18 +563,18 @@ def request_review_kb(req_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:admin")],
     ])
 
-def lang_kb() -> InlineKeyboardMarkup:
+def lang_kb(lang_code: str) -> InlineKeyboardMarkup:
+    L = LANG.get(lang_code, LANG["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang:set:ru"),
             InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:set:en"),
             InlineKeyboardButton(text="🇹🇯 Тоҷикӣ", callback_data="lang:set:tj"),
         ],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:back")]
+        [InlineKeyboardButton(text=L["btn_back"], callback_data="menu:back")]
     ])
 
 def yes_no_kb(prefix: str) -> InlineKeyboardMarkup:
-    # prefix examples: "ben:ordered", "ben:paid"
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ Да", callback_data=f"{prefix}:yes"),
@@ -326,26 +584,28 @@ def yes_no_kb(prefix: str) -> InlineKeyboardMarkup:
     ])
 
 def benefit_menu_btn_kb() -> InlineKeyboardMarkup:
-    # shown on success
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ В админ-панель", callback_data="menu:admin")],
     ])
 
-
-# Calculator helpers
-def calc_unit_kb() -> InlineKeyboardMarkup:
+# Calculator helpers (localized prompts)
+def calc_unit_kb(lang_code: str) -> InlineKeyboardMarkup:
+    L = LANG.get(lang_code, LANG["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Метры (м)", callback_data="calc:unit:m"),
             InlineKeyboardButton(text="Сантиметры (см)", callback_data="calc:unit:cm"),
         ],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu:back")],
+        [InlineKeyboardButton(text=L["btn_back"], callback_data="menu:back")],
     ])
-def calc_again_kb() -> InlineKeyboardMarkup:
+
+def calc_again_kb(lang_code: str) -> InlineKeyboardMarkup:
+    L = LANG.get(lang_code, LANG["ru"])
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔁 Новый расчёт", callback_data="menu:calc")],
-        [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu:back")],
+        [InlineKeyboardButton(text=L["btn_calc_again"], callback_data="menu:calc")],
+        [InlineKeyboardButton(text=L["btn_menu_back"], callback_data="menu:back")],
     ])
+
 def _parse_pos_float(s: str) -> float | None:
     try:
         s = s.replace(",", ".").strip()
@@ -356,7 +616,11 @@ def _parse_pos_float(s: str) -> float | None:
 
 
 
-# db helpers
+###############################################################################
+###############################################################################
+
+
+
 
 # === Part 3: DB helpers (search/save/list) ===
 def format_shipment_row(row: dict) -> str:
@@ -422,7 +686,7 @@ async def get_next_pending_request() -> dict | None:
     except Exception as e:
         print("Fetch pending request error:", e)
         return None
-    
+
 async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
     """
     Expects data = {
@@ -431,7 +695,8 @@ async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
     }
     """
     try:
-        benefit = float(data["real_cost"]) - float(data["user_paid"])
+        # FIX: profit should be user_paid - real_cost
+        benefit = float(data["user_paid"]) - float(data["real_cost"])
         supabase_admin.table("order_benefits").insert({
             "tg_admin_id": admin_id,
             "whatsapp": data["whatsapp"],
@@ -444,7 +709,6 @@ async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
         return True, f"💾 Сохранено. Прибыль: {benefit:.2f}."
     except Exception as e:
         return False, f"Ошибка сохранения: {e}"
-
 
 def format_benefit_row_line(r: dict) -> str:
     wa = r.get("whatsapp") or "—"
@@ -468,10 +732,6 @@ async def fetch_benefits_page(page: int, page_size: int = BEN_PAGE_SIZE) -> tupl
     return rows, total
 
 async def fetch_benefits_totals() -> tuple[float, float, float]:
-    """
-    Simple totals computed client-side.
-    For large datasets consider a SQL view/edge function instead.
-    """
     try:
         res = supabase_admin.table("order_benefits").select("real_cost, user_paid, benefit").execute()
         items = res.data or []
@@ -512,13 +772,12 @@ async def show_admin_benefits(msg, admin_id: int, page: int):
     text, kb = await render_benefits_page(page)
     await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
-
 def format_ship_row_line(r: dict) -> str:
-    t = r.get("tracking_code") or "—"
+    tcode = r.get("tracking_code") or "—"
     s = r.get("status") or "—"
     p = r.get("phone") or "—"
     c = (r.get("created_at") or "")[:19]
-    return f"{t} | {s} | {p} | {c}"
+    return f"{tcode} | {s} | {p} | {c}"
 
 async def fetch_shipments_page(page: int, page_size: int = PAGE_SIZE) -> tuple[list[dict], int]:
     if page < 1:
@@ -560,7 +819,10 @@ async def show_admin_list(msg, admin_id: int, page: int):
     await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
 
-# calback
+
+###############################################################################
+###############################################################################
+
 
 # === Part 4: callback handlers ===
 @dp.message(CommandStart())
@@ -586,22 +848,37 @@ async def open_menu(message: Message):
 async def handle_menu_callbacks(cb: CallbackQuery):
     key = cb.data.split(":", 1)[1]
     uid = cb.from_user.id
+    lang = get_lang(uid)
 
     if key == "channels":
-        await cb.message.edit_text(t(uid, "channels_title"), reply_markup=channels_kb())
+        await cb.message.edit_text(t(uid, "channels_title"), reply_markup=channels_kb(lang))
     elif key == "track":
-        await cb.message.edit_text(t(uid, "track_how"), reply_markup=track_choice_kb())
+        await cb.message.edit_text(t(uid, "track_how"), reply_markup=track_choice_kb(lang))
     elif key == "calc":
         CALC_STATE[uid] = "calc_unit"; CALC_DATA[uid] = {}
-        await cb.message.edit_text("📦 Расчёт объёма (м³).\nСначала выберите единицы измерения:", reply_markup=calc_unit_kb())
+        await cb.message.edit_text(t(uid, "calc_intro"), reply_markup=calc_unit_kb(lang))
     elif key == "delivery":
-        await cb.message.edit_text(LANG[get_lang(uid)]["delivery_text"], parse_mode="Markdown")
+        # FIX: use t() to avoid KeyError with legacy/nonstandard lang codes
+        await cb.message.edit_text(t(uid, "delivery_text"), parse_mode="Markdown")
     elif key == "about":
-        await cb.message.edit_text(LANG[get_lang(uid)]["about_text"], parse_mode="Markdown")
+        await cb.message.edit_text(t(uid, "about_text"), parse_mode="Markdown")
     elif key == "contact":
-        await cb.message.edit_text("Контакты: @mg19981 • @Yasin_direct")
+        await cb.message.edit_text(t(uid, "contact_text"), parse_mode="Markdown")
     elif key == "lang":
-        await cb.message.edit_text(t(uid, "lang_pick"), reply_markup=lang_kb())
+        await cb.message.edit_text(t(uid, "lang_pick"), reply_markup=lang_kb(lang))
+    elif key == "warehouse":
+        lang = get_lang(uid)
+        L = LANG.get(lang, LANG["ru"])
+        txt = L["warehouse_text_multi"].format(
+            title=L["warehouse_title_multi"],
+            tj_label=L["warehouse_tj_label"],
+            ru_label=L["warehouse_ru_label"],
+            tj_addr=L["warehouse_tj_address"],
+            ru_addr=L["warehouse_ru_address"],
+        )
+        # code fences make it copy-friendly and avoid Markdown parse issues
+        await cb.message.edit_text(txt, parse_mode="Markdown")
+
     elif key == "admin":
         if uid in ADMIN_IDS:
             await cb.message.edit_text("Админ-панель: выберите действие.", reply_markup=admin_menu_kb())
@@ -611,9 +888,8 @@ async def handle_menu_callbacks(cb: CallbackQuery):
         USER_REQ_STATE[uid] = "req_track"; USER_REQ_DATA[uid] = {}
         await cb.message.edit_text("📥 Заявка на добавление отправления.\n\nВведите *трек-код*:", parse_mode="Markdown")
     elif key == "back":
-        await cb.message.edit_text(t(uid, "menu_title"), reply_markup=main_menu_kb(get_lang(uid)))
+        await cb.message.edit_text(t(uid, "menu_title"), reply_markup=main_menu_kb(lang))
     await cb.answer()
-
 
 # Admin: Benefit flow start
 @dp.callback_query(F.data == "admin:benefit")
@@ -629,7 +905,6 @@ async def admin_benefit_start(cb: CallbackQuery):
     )
     await cb.answer()
 
-# Admin: Benefit yes/no (ordered / paid)
 @dp.callback_query(F.data.startswith("ben:ordered:"))
 async def ben_ordered_cb(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -652,7 +927,6 @@ async def ben_paid_cb(cb: CallbackQuery):
     await cb.message.edit_text("Введите *реальную стоимость товара* (число):", parse_mode="Markdown")
     await cb.answer()
 
-# Admin: Benefit cancel
 @dp.callback_query(F.data == "ben:cancel")
 async def ben_cancel(cb: CallbackQuery):
     uid = cb.from_user.id
@@ -660,7 +934,6 @@ async def ben_cancel(cb: CallbackQuery):
     BEN_DATA[uid] = {}
     await cb.message.edit_text("Отменено. Админ-панель:", reply_markup=admin_menu_kb())
     await cb.answer()
-
 
 # Language set
 @dp.callback_query(F.data.startswith("lang:set:"))
@@ -673,8 +946,8 @@ async def set_language(cb: CallbackQuery):
     await cb.message.edit_text(
         t(uid, "lang_saved", lang_name=LANG_NAMES.get(lang, lang)) + "\n" + t(uid, "menu_title"),
         reply_markup=main_menu_kb(lang)
-    ); await cb.answer()
-
+    )
+    await cb.answer()
 
 @dp.callback_query(F.data == "admin:benefits")
 async def admin_benefits_start(cb: CallbackQuery):
@@ -702,7 +975,6 @@ async def ben_list_next(cb: CallbackQuery):
     await show_admin_benefits(cb.message, uid, page=current + 1)
     await cb.answer()
 
-
 # Track flow choice
 @dp.callback_query(F.data == "track:by_code")
 async def track_by_code(cb: CallbackQuery):
@@ -718,19 +990,19 @@ async def track_by_phone(cb: CallbackQuery):
 @dp.callback_query(F.data == "calc:unit:m")
 async def calc_unit_m(cb: CallbackQuery):
     u = cb.from_user.id; CALC_STATE[u] = "calc_h"; CALC_DATA.setdefault(u, {})["unit"] = "m"
-    await cb.message.edit_text("Введите *высоту* в метрах (например, 1.2):", parse_mode="Markdown"); await cb.answer()
+    await cb.message.edit_text(t(u, "calc_enter_h_m"), parse_mode="Markdown"); await cb.answer()
 
 @dp.callback_query(F.data == "calc:unit:cm")
 async def calc_unit_cm(cb: CallbackQuery):
     u = cb.from_user.id; CALC_STATE[u] = "calc_h"; CALC_DATA.setdefault(u, {})["unit"] = "cm"
-    await cb.message.edit_text("Введите *высоту* в сантиметрах (например, 120):", parse_mode="Markdown"); await cb.answer()
+    await cb.message.edit_text(t(u, "calc_enter_h_cm"), parse_mode="Markdown"); await cb.answer()
 
 # Admin: search shortcut
 @dp.callback_query(F.data == "admin:search")
 async def admin_search_start(cb: CallbackQuery):
     if cb.from_user.id not in ADMIN_IDS:
         await cb.answer("Нет доступа", show_alert=True); return
-    await cb.message.edit_text("Как искать отправление?", reply_markup=track_choice_kb()); await cb.answer()
+    await cb.message.edit_text("Как искать отправление?", reply_markup=track_choice_kb(get_lang(cb.from_user.id))); await cb.answer()
 
 # Admin: add shipment
 @dp.callback_query(F.data == "admin:add")
@@ -864,262 +1136,210 @@ async def admin_list_next(cb: CallbackQuery):
     await show_admin_list(cb.message, cb.from_user.id, page=current + 1); await cb.answer()
 
 
-
-# message router
-
+##############################################################
+##############################################################
 
 # === Part 5: message router + runner ===
 @dp.message()
 async def message_router(message: Message):
-    user_id = message.from_user.id
-    state = ADMIN_FLOW_STATE.get(user_id)
+    uid = message.from_user.id
+    lang = get_lang(uid)
 
-    # Admin add shipment — step 1 tracking
-    if user_id in ADMIN_IDS and state == "awaiting_tracking":
+    # Admin add shipment — step 1: tracking
+    if uid in ADMIN_IDS and ADMIN_FLOW_STATE.get(uid) == "awaiting_tracking":
         tracking = (message.text or "").strip()
         if not tracking or len(tracking) < 5:
-            await message.answer("Трек-код слишком короткий. Введите снова:"); return
-        ADMIN_NEW_SHIPMENT[user_id]["tracking_code"] = tracking
-        ADMIN_FLOW_STATE[user_id] = "awaiting_phone"
-        await message.answer("📞 Введите *номер телефона* клиента (например, +992XXXXXXXXX):", parse_mode="Markdown"); return
+            await message.answer("Трек-код слишком короткий."); return
+        ADMIN_NEW_SHIPMENT[uid]["tracking_code"] = tracking
+        ADMIN_FLOW_STATE[uid] = "awaiting_phone"
+        await message.answer("📞 Введите *номер телефона* клиента:", parse_mode="Markdown")
+        return
 
-    # Admin add shipment — step 2 phone
-    if user_id in ADMIN_IDS and state == "awaiting_phone":
+    # Step 2: phone
+    if uid in ADMIN_IDS and ADMIN_FLOW_STATE.get(uid) == "awaiting_phone":
         phone_raw = (message.text or "").strip()
         phone = normalize_phone(phone_raw)
         if not PHONE_RE.match(phone):
-            await message.answer("Неверный формат телефона. Пример: +992XXXXXXXXX. Введите снова:"); return
-        ADMIN_NEW_SHIPMENT[user_id]["phone"] = phone
-        ADMIN_FLOW_STATE[user_id] = "awaiting_description"
-        await message.answer("📝 Введите *краткое описание* (например, «Электроника, 2 кг»):", parse_mode="Markdown"); return
+            await message.answer("Неверный формат телефона."); return
+        ADMIN_NEW_SHIPMENT[uid]["phone"] = phone
+        ADMIN_FLOW_STATE[uid] = "awaiting_description"
+        await message.answer("📝 Введите *краткое описание*:", parse_mode="Markdown")
+        return
 
-    # Admin add shipment — step 3 description -> save
-    if user_id in ADMIN_IDS and state == "awaiting_description":
+    # Step 3: description -> save
+    if uid in ADMIN_IDS and ADMIN_FLOW_STATE.get(uid) == "awaiting_description":
         desc = (message.text or "").strip()
         if len(desc) < 3:
-            await message.answer("Описание слишком короткое. Введите снова:"); return
-        ADMIN_NEW_SHIPMENT[user_id]["description"] = desc
-        ok, msg = await save_shipment_to_db(ADMIN_NEW_SHIPMENT[user_id])
-        ADMIN_FLOW_STATE[user_id] = None; ADMIN_NEW_SHIPMENT[user_id] = {}
-        await message.answer(msg); await message.answer("Админ-панель:", reply_markup=admin_menu_kb()); return
+            await message.answer("Описание слишком короткое."); return
+        ADMIN_NEW_SHIPMENT[uid]["description"] = desc
+        ok, msg = await save_shipment_to_db(ADMIN_NEW_SHIPMENT[uid])
+        ADMIN_FLOW_STATE[uid] = None; ADMIN_NEW_SHIPMENT[uid] = {}
+        await message.answer(msg)
+        await message.answer("Админ-панель:", reply_markup=admin_menu_kb())
+        return
 
-    # Admin change status — ask tracking
-    if user_id in ADMIN_IDS and ADMIN_STATUS_STATE.get(user_id) == "awaiting_status_tracking":
+    # Admin change status: ask tracking
+    if uid in ADMIN_IDS and ADMIN_STATUS_STATE.get(uid) == "awaiting_status_tracking":
         tracking = (message.text or "").strip()
         if not tracking or len(tracking) < 5:
-            await message.answer("Трек-код слишком короткий. Введите снова:"); return
+            await message.answer("Трек-код слишком короткий."); return
         try:
-            res = supabase_admin.table("shipments").select("id, tracking_code, status").eq("tracking_code", tracking).limit(1).execute()
+            res = supabase_admin.table("shipments").select("id, tracking_code, status")\
+                .eq("tracking_code", tracking).limit(1).execute()
             if not res.data:
-                await message.answer("❗ Отправление с таким трек-кодом не найдено. Введите другой:"); return
+                await message.answer("❗ Не найдено."); return
         except Exception as e:
-            await message.answer(f"Ошибка поиска отправления: {e}"); return
-        ADMIN_STATUS_TARGET[user_id] = tracking; ADMIN_STATUS_STATE[user_id] = None
-        await message.answer(f"Отправление найдено: *{tracking}*\nТекущий статус: {res.data[0].get('status') or '—'}\n\nВыберите новый статус:", parse_mode="Markdown", reply_markup=status_choice_kb()); return
+            await message.answer(f"Ошибка: {e}"); return
+        ADMIN_STATUS_TARGET[uid] = tracking
+        ADMIN_STATUS_STATE[uid] = None
+        await message.answer(
+            f"Текущий статус: {res.data[0].get('status') or '—'}\nВыберите новый статус:",
+            reply_markup=status_choice_kb()
+        )
+        return
 
-    # USER REQUEST FLOW
-    req_state = USER_REQ_STATE.get(user_id)
-    if req_state == "req_track":
+    # User request flow
+    if USER_REQ_STATE.get(uid) == "req_track":
         tracking = (message.text or "").strip()
         if not tracking or len(tracking) < 5:
-            await message.answer("Трек-код слишком короткий. Введите снова:"); return
-        USER_REQ_DATA.setdefault(user_id, {})["tracking_code"] = tracking
-        USER_REQ_STATE[user_id] = "req_phone_code"
-        await message.answer("Выберите код страны для телефона:", reply_markup=phone_code_kb()); return
+            await message.answer("Трек-код слишком короткий."); return
+        USER_REQ_DATA.setdefault(uid, {})["tracking_code"] = tracking
+        USER_REQ_STATE[uid] = "req_phone_code"
+        await message.answer("Выберите код страны:", reply_markup=phone_code_kb())
+        return
 
-    if req_state == "req_phone_code_custom":
+    if USER_REQ_STATE.get(uid) == "req_phone_code_custom":
         code = (message.text or "").strip()
         if not code.startswith("+") or not re.sub(r"\D", "", code):
-            await message.answer("Неверный код. Пример: +49. Введите ещё раз:"); return
-        USER_REQ_DATA.setdefault(user_id, {})["phone_code"] = code
-        USER_REQ_STATE[user_id] = "req_phone_local"
-        await message.answer(f"Код выбран: {code}\nТеперь введите номер (без кода), только цифры:"); return
+            await message.answer("Неверный код."); return
+        USER_REQ_DATA.setdefault(uid, {})["phone_code"] = code
+        USER_REQ_STATE[uid] = "req_phone_local"
+        await message.answer(f"Код выбран: {code}\nВведите номер без кода:")
+        return
 
-    if req_state == "req_phone_local":
+    if USER_REQ_STATE.get(uid) == "req_phone_local":
         local = (message.text or "").strip().replace(" ", "").replace("-", "")
-        code = USER_REQ_DATA[user_id].get("phone_code", "")
+        code = USER_REQ_DATA[uid].get("phone_code", "")
         full = normalize_phone(code + local)
         if not PHONE_RE.match(full):
-            await message.answer("Неверный телефон. Введите только цифры после кода страны:"); return
-        USER_REQ_DATA[user_id]["phone_local"] = local
-        USER_REQ_DATA[user_id]["phone"] = full
-        USER_REQ_STATE[user_id] = "req_country"
-        await message.answer("Выберите страну:", reply_markup=country_kb()); return
+            await message.answer("Неверный телефон."); return
+        USER_REQ_DATA[uid]["phone"] = full
+        USER_REQ_STATE[uid] = "req_country"
+        await message.answer("Выберите страну:", reply_markup=country_kb())
+        return
 
-    if req_state == "req_country_custom":
+    if USER_REQ_STATE.get(uid) == "req_country_custom":
         country = (message.text or "").strip()
         if len(country) < 2:
-            await message.answer("Слишком короткое название. Введите ещё раз:"); return
-        USER_REQ_DATA[user_id]["country"] = country
-        data = USER_REQ_DATA[user_id]
+            await message.answer("Слишком короткое название."); return
+        USER_REQ_DATA[uid]["country"] = country
         try:
             supabase_admin.table("shipment_requests").insert({
-                "user_id": user_id, "tracking_code": data["tracking_code"],
-                "phone": data["phone"], "country": data["country"],
+                "user_id": uid,
+                "tracking_code": USER_REQ_DATA[uid]["tracking_code"],
+                "phone": USER_REQ_DATA[uid]["phone"],
+                "country": USER_REQ_DATA[uid]["country"],
             }).execute()
         except Exception as e:
-            await message.answer(f"Ошибка сохранения заявки: {e}")
-            USER_REQ_STATE[user_id] = None; USER_REQ_DATA[user_id] = {}; return
-        USER_REQ_STATE[user_id] = None; USER_REQ_DATA[user_id] = {}
-        await message.answer("✅ Заявка отправлена на проверку администратору. Мы уведомим вас после подтверждения.")
-        await message.answer(t(user_id, "menu_title"), reply_markup=main_menu_kb(get_lang(user_id))); return
+            await message.answer(f"Ошибка: {e}")
+            USER_REQ_STATE[uid] = None; USER_REQ_DATA[uid] = {}; return
+        USER_REQ_STATE[uid] = None; USER_REQ_DATA[uid] = {}
+        await message.answer("✅ Заявка отправлена.")
+        await message.answer(t(uid, "menu_title"), reply_markup=main_menu_kb(lang))
+        return
 
-    # Calculator flow (H -> W -> L)
-    if CALC_STATE.get(user_id) == "calc_h":
+    # Calculator: height
+    if CALC_STATE.get(uid) == "calc_h":
         v = _parse_pos_float(message.text or "")
         if v is None:
-            unit = "м" if CALC_DATA.get(user_id, {}).get("unit") == "m" else "см"
-            await message.answer(f"Неверное значение. Введите высоту в {unit}:"); return
-        CALC_DATA[user_id]["h"] = v; CALC_STATE[user_id] = "calc_w"
-        unit_phrase = "метрах" if CALC_DATA[user_id]["unit"] == "m" else "сантиметрах"
-        await message.answer(f"Ок. Теперь введите *ширину* в {unit_phrase}:", parse_mode="Markdown"); return
+            unit = LANG[lang]["unit_m"] if CALC_DATA.get(uid, {}).get("unit") == "m" else LANG[lang]["unit_cm"]
+            await message.answer(t(uid, "calc_invalid_value_unit", dimension=t(uid, "dim_height"), unit=unit)); return
+        CALC_DATA[uid]["h"] = v
+        CALC_STATE[uid] = "calc_w"
+        await message.answer(t(uid, "calc_enter_w_unit", unit_phrase=t(uid, f"unit_phrase_{CALC_DATA[uid]['unit']}")), parse_mode="Markdown")
+        return
 
-    if CALC_STATE.get(user_id) == "calc_w":
+    # Calculator: width
+    if CALC_STATE.get(uid) == "calc_w":
         v = _parse_pos_float(message.text or "")
         if v is None:
-            unit = "м" if CALC_DATA.get(user_id, {}).get("unit") == "m" else "см"
-            await message.answer(f"Неверное значение. Введите ширину в {unit}:"); return
-        CALC_DATA[user_id]["w"] = v; CALC_STATE[user_id] = "calc_l"
-        unit_phrase = "метрах" if CALC_DATA[user_id]["unit"] == "m" else "сантиметрах"
-        await message.answer(f"Отлично. Теперь введите *длину* в {unit_phrase}:", parse_mode="Markdown"); return
+            unit = LANG[lang]["unit_m"] if CALC_DATA[uid]["unit"] == "m" else LANG[lang]["unit_cm"]
+            await message.answer(t(uid, "calc_invalid_value_unit", dimension=t(uid, "dim_width"), unit=unit)); return
+        CALC_DATA[uid]["w"] = v
+        CALC_STATE[uid] = "calc_l"
+        await message.answer(t(uid, "calc_enter_l_unit", unit_phrase=t(uid, f"unit_phrase_{CALC_DATA[uid]['unit']}")), parse_mode="Markdown")
+        return
 
-    if CALC_STATE.get(user_id) == "calc_l":
+    # Calculator: length
+    if CALC_STATE.get(uid) == "calc_l":
         v = _parse_pos_float(message.text or "")
         if v is None:
-            unit = "м" if CALC_DATA.get(user_id, {}).get("unit") == "m" else "см"
-            await message.answer(f"Неверное значение. Введите длину в {unit}:"); return
-        CALC_DATA[user_id]["l"] = v
-        unit = CALC_DATA[user_id]["unit"]
-        h, w, l = CALC_DATA[user_id]["h"], CALC_DATA[user_id]["w"], CALC_DATA[user_id]["l"]
-        if unit == "cm":
-            h, w, l = h/100.0, w/100.0, l/100.0
-        volume_m3 = h * w * l
-        CALC_STATE[user_id] = None; CALC_DATA[user_id] = {}
-        await message.answer(f"📦 Объём: *{volume_m3:.3f} м³*", parse_mode="Markdown", reply_markup=calc_again_kb()); return
+            unit = LANG[lang]["unit_m"] if CALC_DATA[uid]["unit"] == "m" else LANG[lang]["unit_cm"]
+            await message.answer(t(uid, "calc_invalid_value_unit", dimension=t(uid, "dim_length"), unit=unit)); return
+        CALC_DATA[uid]["l"] = v
+        h, w, l_ = CALC_DATA[uid]["h"], CALC_DATA[uid]["w"], CALC_DATA[uid]["l"]
+        if CALC_DATA[uid]["unit"] == "cm":
+            h, w, l_ = h/100, w/100, l_/100
+        volume = h * w * l_
+        CALC_STATE[uid] = None; CALC_DATA[uid] = {}
+        await message.answer(t(uid, "calc_result", volume=volume), parse_mode="Markdown",
+                             reply_markup=calc_again_kb(lang))
+        return
 
-
-        # ---- Admin: BENEFIT FLOW (messages) ----
-    if user_id in ADMIN_IDS and BEN_STATE.get(user_id) == "whatsapp":
+    # Admin benefit flow
+    if uid in ADMIN_IDS and BEN_STATE.get(uid) == "whatsapp":
         wa = (message.text or "").strip()
-        # very lenient check: must have digits, optionally starts with +; you can harden this later
         if not re.search(r"\d", wa):
-            await message.answer("Неверный формат WhatsApp. Введите ещё раз:")
-            return
-        BEN_DATA.setdefault(user_id, {})["whatsapp"] = wa
-        BEN_STATE[user_id] = "ordered"
-        await message.answer("Покупатель оформил заказ?\nВыберите вариант:", reply_markup=yes_no_kb("ben:ordered"))
+            await message.answer("Неверный формат WhatsApp."); return
+        BEN_DATA.setdefault(uid, {})["whatsapp"] = wa
+        BEN_STATE[uid] = "ordered"
+        await message.answer("Покупатель оформил заказ?", reply_markup=yes_no_kb("ben:ordered"))
         return
 
-    if user_id in ADMIN_IDS and BEN_STATE.get(user_id) == "real_cost":
+    if uid in ADMIN_IDS and BEN_STATE.get(uid) == "real_cost":
         val = _parse_pos_float(message.text or "")
         if val is None:
-            await message.answer("Введите корректное число (реальная стоимость):")
-            return
-        BEN_DATA.setdefault(user_id, {})["real_cost"] = float(val)
-        BEN_STATE[user_id] = "user_paid"
-        await message.answer("Введите сумму, которую оплатил покупатель (число):")
+            await message.answer("Введите корректное число."); return
+        BEN_DATA.setdefault(uid, {})["real_cost"] = float(val)
+        BEN_STATE[uid] = "user_paid"
+        await message.answer("Введите сумму, которую оплатил покупатель:")
         return
 
-    if user_id in ADMIN_IDS and BEN_STATE.get(user_id) == "user_paid":
+    if uid in ADMIN_IDS and BEN_STATE.get(uid) == "user_paid":
         val = _parse_pos_float(message.text or "")
         if val is None:
-            await message.answer("Введите корректное число (оплачено покупателем):")
-            return
-        BEN_DATA.setdefault(user_id, {})["user_paid"] = float(val)
-
-        # compute & save
-        ok, msg = await save_benefit_row(user_id, BEN_DATA[user_id])
-        # Show summary
-        d = BEN_DATA[user_id]
-        benefit = d["real_cost"] - d["user_paid"]
-        summary = (
-            "💹 **Итог по сделке**\n\n"
-            f"WhatsApp: {d['whatsapp']}\n"
-            f"Заказ оформлен: {'Да' if d['ordered'] else 'Нет'}\n"
-            f"Оплата получена: {'Да' if d['paid'] else 'Нет'}\n"
-            f"Реальная стоимость: {d['real_cost']:.2f}\n"
-            f"Оплачено клиентом: {d['user_paid']:.2f}\n"
-            f"**Прибыль:** {benefit:.2f}\n\n"
-            + msg
-        )
-        # reset
-        BEN_STATE[user_id] = None
-        BEN_DATA[user_id] = {}
-
-        await message.answer(summary, parse_mode="Markdown", reply_markup=benefit_menu_btn_kb())
+            await message.answer("Введите корректное число."); return
+        BEN_DATA.setdefault(uid, {})["user_paid"] = float(val)
+        ok, msg = await save_benefit_row(uid, BEN_DATA[uid])
+        BEN_STATE[uid] = None; BEN_DATA[uid] = {}
+        await message.answer(msg, reply_markup=benefit_menu_btn_kb())
         return
 
-
-
-    # User (or admin) search flow
-    if USER_TRACK_STATE.get(user_id):
+    # Tracking search flow
+    if USER_TRACK_STATE.get(uid):
         query = (message.text or "").strip()
         if not query:
-            await message.answer("Пустой запрос. Введите значение:"); return
-        mode = USER_TRACK_MODE.get(user_id)
+            await message.answer("Пустой запрос."); return
+        mode = USER_TRACK_MODE.get(uid)
         results = await find_shipments(query, mode)
-        USER_TRACK_STATE[user_id] = False; USER_TRACK_MODE[user_id] = ""
+        USER_TRACK_STATE[uid] = False; USER_TRACK_MODE[uid] = ""
         if not results:
-            await message.answer(t(user_id, "search_none"))
-            await message.answer(t(user_id, "search_again"), reply_markup=track_choice_kb()); return
-        if mode == "code":
-            await message.answer("Найдено отправление:\n\n" + format_shipment_row(results[0]))
-            await message.answer(t(user_id, "search_again"), reply_markup=track_choice_kb()); return
-        if mode == "phone":
-            header = f"Найдено отправлений по номеру {normalize_phone(query)}: {len(results)}"
-            chunks, sep = [header], "\n" + ("—" * 24) + "\n"
-            for r in results:
-                chunks.append(format_shipment_row(r))
-            await message.answer(sep.join(chunks))
-            await message.answer(t(user_id, "search_again"), reply_markup=track_choice_kb()); return
+            await message.answer(t(uid, "search_none"))
+            await message.answer(t(uid, "search_again"), reply_markup=track_choice_kb(lang))
+            return
         if len(results) == 1:
-            await message.answer("Найдено отправление:\n\n" + format_shipment_row(results[0]))
+            await message.answer(format_shipment_row(results[0]))
         else:
-            header = f"Найдено отправлений: {len(results)}"
-            chunks, sep = [header], "\n" + ("—" * 24) + "\n"
-            for r in results:
-                chunks.append(format_shipment_row(r))
-            await message.answer(sep.join(chunks))
-        await message.answer(t(user_id, "search_again"), reply_markup=track_choice_kb()); return
-
-# Request flow button handlers (custom code & country)
-@dp.callback_query(F.data.startswith("req:code:"))
-async def req_choose_code(cb: CallbackQuery):
-    u = cb.from_user.id
-    if USER_REQ_STATE.get(u) != "req_phone_code": await cb.answer(); return
-    _, _, code = cb.data.partition("req:code:")
-    if code == "custom":
-        USER_REQ_DATA.setdefault(u, {})["phone_code"] = ""
-        USER_REQ_STATE[u] = "req_phone_code_custom"
-        await cb.message.edit_text("Введите код страны вручную (например, +49):"); await cb.answer(); return
-    USER_REQ_DATA.setdefault(u, {})["phone_code"] = code
-    USER_REQ_STATE[u] = "req_phone_local"
-    await cb.message.edit_text(f"Код выбран: {code}\nТеперь введите номер (без кода), только цифры:"); await cb.answer()
-
-@dp.callback_query(F.data.startswith("req:country:"))
-async def req_choose_country(cb: CallbackQuery):
-    u = cb.from_user.id
-    if USER_REQ_STATE.get(u) != "req_country": await cb.answer(); return
-    _, _, country = cb.data.partition("req:country:")
-    if country == "custom":
-        USER_REQ_STATE[u] = "req_country_custom"
-        await cb.message.edit_text("Введите название страны вручную:"); await cb.answer(); return
-    USER_REQ_DATA.setdefault(u, {})["country"] = country
-    data = USER_REQ_DATA[u]
-    try:
-        supabase_admin.table("shipment_requests").insert({
-            "user_id": u, "tracking_code": data["tracking_code"],
-            "phone": normalize_phone(data["phone"]), "country": country,
-        }).execute()
-    except Exception as e:
-        await cb.message.edit_text(f"Ошибка сохранения заявки: {e}")
-        USER_REQ_STATE[u] = None; USER_REQ_DATA[u] = {}; await cb.answer(); return
-    USER_REQ_STATE[u] = None; USER_REQ_DATA[u] = {}
-    await cb.message.edit_text("✅ Заявка отправлена на проверку администратору. Мы уведомим вас после подтверждения.")
-    await cb.message.answer(t(u, "menu_title"), reply_markup=main_menu_kb(get_lang(u))); await cb.answer()
+            await message.answer("\n\n".join(format_shipment_row(r) for r in results))
+        await message.answer(t(uid, "search_again"), reply_markup=track_choice_kb(lang))
+        return
 
 # Runner
 async def main():
     await dp.start_polling(bot)
+
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
