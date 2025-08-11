@@ -621,7 +621,6 @@ def _parse_pos_float(s: str) -> float | None:
 
 
 
-
 # === Part 3: DB helpers (search/save/list) ===
 def format_shipment_row(row: dict) -> str:
     parts = [
@@ -687,6 +686,7 @@ async def get_next_pending_request() -> dict | None:
         print("Fetch pending request error:", e)
         return None
 
+# ---------- Benefits (profit) helpers ----------
 async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
     """
     Expects data = {
@@ -695,7 +695,7 @@ async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
     }
     """
     try:
-        # FIX: profit should be user_paid - real_cost
+        # Profit = user_paid - real_cost
         benefit = float(data["user_paid"]) - float(data["real_cost"])
         supabase_admin.table("order_benefits").insert({
             "tg_admin_id": admin_id,
@@ -710,14 +710,33 @@ async def save_benefit_row(admin_id: int, data: dict) -> tuple[bool, str]:
     except Exception as e:
         return False, f"Ошибка сохранения: {e}"
 
+# Pretty formatting (HTML monospace table)
+def _fmt_money(x) -> str:
+    try:
+        # 12 345.67 style
+        return f"{float(x):,.2f}".replace(",", " ")
+    except:
+        return "0.00"
+
+def _pad(text: str, width: int) -> str:
+    t = str(text or "")
+    return t[:width].ljust(width)
+
 def format_benefit_row_line(r: dict) -> str:
     wa = r.get("whatsapp") or "—"
     paid = "Да" if r.get("paid") else "Нет"
-    rc = f"{float(r.get('real_cost') or 0):.2f}"
-    up = f"{float(r.get('user_paid') or 0):.2f}"
-    bf = f"{float(r.get('benefit') or 0):.2f}"
-    c  = (r.get("created_at") or "")[:19]
-    return f"{wa} | Оплата: {paid} | Реал.: {rc} | Оплач.: {up} | Профит: {bf} | {c}"
+    rc  = _fmt_money(r.get("real_cost") or 0)
+    up  = _fmt_money(r.get("user_paid") or 0)
+    bf  = _fmt_money(r.get("benefit") or 0)
+    dt  = (r.get("created_at") or "")[:19]
+    return (
+        f"{_pad(wa, 17)}  "
+        f"{_pad(paid, 3)}  "
+        f"{_pad(rc, 10)}  "
+        f"{_pad(up, 10)}  "
+        f"{_pad(bf, 10)}  "
+        f"{_pad(dt, 19)}"
+    )
 
 async def fetch_benefits_page(page: int, page_size: int = BEN_PAGE_SIZE) -> tuple[list[dict], int]:
     if page < 1:
@@ -747,31 +766,46 @@ async def render_benefits_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     rows, total = await fetch_benefits_page(page)
     rc_sum, up_sum, bf_sum = await fetch_benefits_totals()
 
-    if total == 0:
-        txt = (
-            "📊 Учёт прибыли\n\n"
-            "Пока записей нет.\n\n"
-            f"ИТОГО: Реальная стоимость {rc_sum:.2f} | Оплачено {up_sum:.2f} | Прибыль {bf_sum:.2f}"
-        )
-        kb = ben_list_nav_kb(1, 1)
-        return txt, kb
+    total_pages = max(1, math.ceil((total or 0) / BEN_PAGE_SIZE))
+    header = (
+        "📊 <b>Учёт прибыли</b>\n"
+        f"Страница {page}/{total_pages} • Записей: {total}\n"
+    )
 
-    total_pages = max(1, math.ceil(total / BEN_PAGE_SIZE))
-    header = f"📊 Учёт прибыли — страница {page}/{total_pages}\nЗаписей: {total}\n"
-    lines = [header, "```", "WhatsApp | Оплата | Реал. | Оплач. | Профит | Дата", "-" * 60]
-    for r in rows:
-        lines.append(format_benefit_row_line(r))
-    lines.append("```")
-    lines.append(f"ИТОГО: Реал. {rc_sum:.2f} | Оплач. {up_sum:.2f} | Профит {bf_sum:.2f}")
-    text = "\n".join(lines)
+    table_header = (
+        "<pre>"
+        f"{_pad('WhatsApp', 17)}  "
+        f"{_pad('Опл', 3)}  "
+        f"{_pad('Реал.', 10)}  "
+        f"{_pad('Оплач.', 10)}  "
+        f"{_pad('Профит', 10)}  "
+        f"{_pad('Дата', 19)}\n"
+        f"{'-'*73}\n"
+    )
+
+    body = ""
+    if total:
+        body = "\n".join(format_benefit_row_line(r) for r in rows) + "\n"
+
+    table_footer = (
+        f"{'-'*73}\n"
+        f"{_pad('ИТОГО:', 22)}  "
+        f"{_pad(_fmt_money(rc_sum), 10)}  "
+        f"{_pad(_fmt_money(up_sum), 10)}  "
+        f"{_pad(_fmt_money(bf_sum), 10)}\n"
+        "</pre>"
+    )
+
+    text = header + table_header + body + table_footer
     kb = ben_list_nav_kb(page, total_pages)
     return text, kb
 
 async def show_admin_benefits(msg, admin_id: int, page: int):
     ADMIN_BEN_PAGE[admin_id] = page
     text, kb = await render_benefits_page(page)
-    await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    await msg.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
+# ---------- Shipments list (unchanged) ----------
 def format_ship_row_line(r: dict) -> str:
     tcode = r.get("tracking_code") or "—"
     s = r.get("status") or "—"
@@ -817,6 +851,7 @@ async def show_admin_list(msg, admin_id: int, page: int):
     ADMIN_LIST_PAGE[admin_id] = page
     text, kb = await render_shipments_page(page)
     await msg.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+
 
 
 
